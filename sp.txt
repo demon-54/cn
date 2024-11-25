@@ -1279,4 +1279,298 @@ int a=5;
 int c=7;
 print(c*a);
 
+//code to print only literal table
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
+typedef struct {
+    char literal[10];
+    int address;
+} LiteralEntry;
+
+typedef struct {
+    int pool_start;
+} PoolEntry;
+
+LiteralEntry littab[100];
+int littab_index = 0;
+
+PoolEntry pooltab[100];
+int pooltab_index = 0;
+    int locctr = 0;
+
+void addLiteral(char *literal) {
+    int i;
+    for (i = 0; i < littab_index; i++) {
+        if (strcmp(littab[i].literal, literal) == 0) {
+            return; 
+        }
+    }
+    strcpy(littab[littab_index].literal, literal);
+    littab[littab_index].address = -1; 
+    littab_index++;
+}
+
+
+void processLTORG() {
+    int i;
+    if (pooltab_index == 0 || pooltab[pooltab_index - 1].pool_start < littab_index) {
+        pooltab[pooltab_index].pool_start = littab_index;
+        pooltab_index++;
+    }
+    for (i = pooltab[pooltab_index ].pool_start; i < littab_index; i++) {
+        if (littab[i].address == -1) {
+            littab[i].address = locctr++;
+        }
+    }
+}
+
+
+void processLineForLiterals(char *label,char *mnemonic, char *operand) {
+
+  //  printf("%s %s %s %d\n",label,mnemonic,operand,locctr);
+    if (operand[0] == '=') {
+        addLiteral(operand);
+        locctr++;
+    }
+    else{
+        locctr++;
+    }
+    if (strcmp(label, "LTORG") == 0) {
+        processLTORG();
+    }
+}
+
+void finalizeLiterals(int *locctr) {
+    processLTORG(locctr);
+}
+
+
+void processFileForLiterals(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    int i;
+
+    char line[100];
+
+
+    printf("Processing file for literal table: %s\n", filename);
+
+    while (fgets(line, sizeof(line), file)) {
+        char label[20] = "", mnemonic[20] = "", operand[20] = "";
+        sscanf(line, "%s %s %s", label, mnemonic, operand);
+
+        if (strcmp(label, "START") == 0 || strcmp(label, "ORIGIN") == 0) {
+    
+            locctr = atoi(mnemonic);
+        } else {
+             
+            processLineForLiterals(label,mnemonic, operand);
+        }
+    }
+
+    fclose(file);
+
+
+    finalizeLiterals(&locctr);
+
+
+    printf("\nLiteral Table:\n");
+    for (i = 0; i < littab_index; i++) {
+        printf("Literal: %s, Address: %d\n", littab[i].literal, littab[i].address);
+    }
+
+
+    printf("\nPool Table:\n");
+    for (i = 0; i < pooltab_index; i++) {
+        printf("Pool %d starts at literal %d\n", i + 1, pooltab[i].pool_start);
+    }
+}
+
+
+int main() {
+    const char *filename = "in7.txt"; 
+    processFileForLiterals(filename);
+    return 0;
+}
+//input for it:
+START 100
+INPSTR DS 50
+COUNT DC 0
+READ INPSTR
+MOVER AREG ='0'
+MOVEM AREG COUNT
+LOOP 
+MOVER BREG INPSTR
+ADD BREG AREG
+COMP BREG ='0'
+LTORG
+BC 8 ENDLOOP
+ADD AREG ='1'
+MOVEM BREG COUNT
+ADD BREG ='1'
+LTORG
+BC 7 LOOP
+ENDLOOP 
+PRINT COUNT
+END
+
+
+//code for symbol table:
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+
+typedef struct {
+    char mnemonic[10];
+    int opcode;
+} mot;
+
+typedef struct {
+    char symbol[10];
+    int address;
+    int defined;
+} symtab_entry;
+
+typedef struct {
+    char reg[10];
+    int code;
+} registertab;
+
+
+mot MOT[] = {
+    {"MOVER", 1}, {"MOVEM", 2}, {"ADD", 3}, {"SUB", 4}, {"MULT", 5},
+    {"DIV", 6}, {"BC", 7}, {"COMP", 8}, {"PRINT", 9}, {"READ", 10}, {"SHIFT", 11}, {"STOP", 12}
+};
+
+mot POT[] = {
+    {"START", 1}, {"END", 2}, {"EQU", 3}, {"ORIGIN", 4}, {"LTORG", 5}
+};
+
+mot DL[] = {
+    {"DS", 1}, {"DC", 2}
+};
+
+registertab registers[] = {
+    {"AREG", 1}, {"BREG", 2}, {"CREG", 3}, {"DREG", 4}
+};
+
+
+symtab_entry symtab[100];
+int symtab_index = 0;
+
+int gop(char *mnemonic, mot table[], int size) {
+    int i;
+    for (i = 0; i < size; i++) {
+        if (strcmp(table[i].mnemonic, mnemonic) == 0) {
+            return table[i].opcode;
+        }
+    }
+    return -1;
+}
+
+int findSymbol(char *symbol) {
+    int i;
+    for (i = 0; i < symtab_index; i++) {
+        if (strcmp(symtab[i].symbol, symbol) == 0) {
+            return i;
+        }
+    }
+    if(gop(symbol, MOT, 11)!=-1){
+        return 1;
+    }else if(gop(symbol, POT, 4)!=-1){
+        return 1;
+    }else if(gop(symbol, DL, 2)!=-1){
+        return 1;
+    }else if((gop(symbol, registers, 4))!=-1){
+        return 1;
+    }
+    return -1;
+}
+
+
+void addSymbol(char *symbol, int address, int defined) {
+    int index = findSymbol(symbol);
+    if (index == -1) {
+        strcpy(symtab[symtab_index].symbol, symbol);
+        symtab[symtab_index].address = address;
+        symtab[symtab_index].defined = defined;
+        symtab_index++;
+    }
+}
+
+
+void processLine(char *label, char *mnemonic, char *operand, int *locctr,int fields) {
+    int i;
+    if (label[0] != '\0') {
+        int index = findSymbol(label);
+        if (index == -1) {
+            addSymbol(label, *locctr, 1);
+        } else {
+            if (!symtab[index].defined) {
+                symtab[index].address = *locctr;
+                symtab[index].defined = 1;
+            }
+        }
+    }
+
+    for (i = 0; i < sizeof(POT) / sizeof(POT[0]); i++) {
+        if (strcmp(POT[i].mnemonic, label) == 0) {
+            if (strcmp(label, "START") == 0) {
+                *locctr = atoi(mnemonic);
+            } else if (strcmp(label, "END") == 0) {
+                return;
+            } else if (strcmp(label, "LTORG") == 0) {
+                *locctr += 1; 
+            }
+            return;
+        }
+    }
+
+    for (i = 0; i < sizeof(DL) / sizeof(DL[0]); i++) {
+        if (strcmp(DL[i].mnemonic, mnemonic) == 0) {
+            if (strcmp(mnemonic, "DS") == 0) {
+                *locctr += 1;
+            } else if (strcmp(mnemonic, "DC") == 0) {
+                *locctr += 1;
+            }
+            return;
+        }
+    }
+
+    for (i = 0; i < sizeof(MOT) / sizeof(MOT[0]); i++) {
+        if (strcmp(MOT[i].mnemonic, mnemonic) == 0) {
+            *locctr += 1;
+            return;
+        }
+    }
+}
+
+void processFile(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    char line[100];
+    int locctr = 0,i;
+
+    while (fgets(line, sizeof(line), file)) {
+        char label[20] = "", mnemonic[20] = "", operand[20] = "";
+        int fields= sscanf(line, "%s %s %s", label, mnemonic, operand);
+        processLine(label, mnemonic, operand, &locctr,fields);
+    }
+
+    fclose(file);
+
+    printf("\nSymbol Table:\n");
+    for (i = 0; i < symtab_index; i++) {
+        printf("%s\t%d\n", symtab[i].symbol, symtab[i].address);
+    }
+}
+
+
+int main() {
+    const char *filename = "in7.txt"; 
+    processFile(filename);
+    return 0;
+}
+
+//use same input as before
