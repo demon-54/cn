@@ -2670,6 +2670,7 @@ NEWLINE     \n
     printf("| %-6d | %-6d | %-15s | %-12s | %-12s |\n",
            column_num, line_num, yytext, "UNKNOWN", yytext);
     column_num += yyleng;
+    exit(EXIT_FAILURE);
 }
 
 %%
